@@ -49,8 +49,7 @@ macro require(mod, expr)
       using $mod
       $expr
     else
-      const $mod = ccall(:jl_new_module, Any, (Any,), $(QuoteNode(mod)))
-      ccall(:jl_module_optional, Void, (Any,), $mod)
+      ccall(:jl_module_register_optional, Void, (Any,), $(QuoteNode(mod)))
     end
   end
   return (esc(ex))
