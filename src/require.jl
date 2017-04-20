@@ -4,29 +4,6 @@ export @require
 
 isprecompiling() = ccall(:jl_generating_output, Cint, ()) == 1
 
-@init @guard begin
-  ch = Channel(32)
-  c = Condition()
-  @schedule begin
-    notify(c)
-    for (name, c) in ch
-      try
-        Base.require(name)
-        notify(c)
-      catch e
-        notify(c, error = true)
-      end
-    end
-  end
-  wait(c)
-  function Base.require(mod::Symbol)
-    c = Condition()
-    push!(ch, (mod, c))
-    wait(c)
-    Main.Requires.loadmod(string(mod))
-  end
-end
-
 loaded(mod) = getthing(Main, mod) != nothing
 
 const modlisteners = Dict{AbstractString,Vector{Function}}()
@@ -67,21 +44,14 @@ end
 
 macro require(mod, expr)
   ex = quote
-    listenmod($(string(mod))) do
-      withpath(@__FILE__) do
-        err($(current_module()), $(string(mod))) do
-          $(esc(:(eval($(Expr(:quote, Expr(:block,
-                                           importexpr(mod),
-                                           expr)))))))
-        end
-      end
-    end
-  end
-  quote
-    if isprecompiling()
-      @init @guard $(ex)
+    # Check if module can be found
+    @static if Base.find_in_node_path($(String(mod)), nothing, 1) !== nothing
+      using $mod
+      $expr
     else
-      $(ex)
+      const $mod = ccall(:jl_new_module, Any, (Any,), $(QuoteNode(mod)))
+      ccall(:jl_module_optional, Void, (Any,), $mod)
     end
   end
+  return (esc(ex))
 end
